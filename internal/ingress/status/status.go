@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -165,28 +166,26 @@ func NewStatusSyncer(config Config) Syncer {
 // ingress controller is currently running
 func (s *statusSync) runningAddresses() ([]string, error) {
 	if s.PublishStatusAddress != "" {
-		return []string{s.PublishStatusAddress}, nil
+		re := regexp.MustCompile(`,\s*`)
+		multipleAddrs := re.Split(s.PublishStatusAddress, -1)
+		return multipleAddrs, nil
 	}
 
 	if s.PublishService != "" {
 		return statusAddressFromService(s.PublishService, s.Client)
 	}
 
-	ingressPod, err := k8s.GetPodDetails()
-	if err != nil {
-		return []string{}, err
-	}
-
 	// get information about all the pods running the ingress controller
-	pods, err := s.Client.CoreV1().Pods(ingressPod.Namespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(ingressPod.Labels).String(),
+	pods, err := s.Client.CoreV1().Pods(k8s.IngressPodDetails.Namespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(k8s.IngressPodDetails.Labels).String(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	addrs := make([]string, 0)
-	for _, pod := range pods.Items {
+	for i := range pods.Items {
+		pod := pods.Items[i]
 		// only Running pods are valid
 		if pod.Status.Phase != apiv1.PodRunning {
 			continue
@@ -216,13 +215,8 @@ func (s *statusSync) runningAddresses() ([]string, error) {
 }
 
 func (s *statusSync) isRunningMultiplePods() bool {
-	ingressPod, err := k8s.GetPodDetails()
-	if err != nil {
-		return false
-	}
-
-	pods, err := s.Client.CoreV1().Pods(ingressPod.Namespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(ingressPod.Labels).String(),
+	pods, err := s.Client.CoreV1().Pods(k8s.IngressPodDetails.Namespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(k8s.IngressPodDetails.Labels).String(),
 	})
 	if err != nil {
 		return false

@@ -18,13 +18,13 @@ package template
 
 import (
 	"bytes"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
+	"math/rand" // #nosec
 	"net"
 	"net/url"
 	"os"
@@ -151,6 +151,7 @@ var (
 		"buildDenyVariable":               buildDenyVariable,
 		"getenv":                          os.Getenv,
 		"contains":                        strings.Contains,
+		"split":                           strings.Split,
 		"hasPrefix":                       strings.HasPrefix,
 		"hasSuffix":                       strings.HasSuffix,
 		"trimSpace":                       strings.TrimSpace,
@@ -288,6 +289,13 @@ func configForLua(input interface{}) string {
 		hsts_max_age = %v,
 		hsts_include_subdomains = %t,
 		hsts_preload = %t,
+
+		global_throttle = {
+			memcached = {
+				host = "%v", port = %d, connect_timeout = %d, max_idle_timeout = %d, pool_size = %d,
+			},
+			status_code = %d,
+		}
 	}`,
 		all.Cfg.UseForwardedHeaders,
 		all.Cfg.UseProxyProtocol,
@@ -300,6 +308,13 @@ func configForLua(input interface{}) string {
 		all.Cfg.HSTSMaxAge,
 		all.Cfg.HSTSIncludeSubdomains,
 		all.Cfg.HSTSPreload,
+
+		all.Cfg.GlobalRateLimitMemcachedHost,
+		all.Cfg.GlobalRateLimitMemcachedPort,
+		all.Cfg.GlobalRateLimitMemcachedConnectTimeout,
+		all.Cfg.GlobalRateLimitMemcachedMaxIdleTimeout,
+		all.Cfg.GlobalRateLimitMemcachedPoolSize,
+		all.Cfg.GlobalRateLimitStatucCode,
 	)
 }
 
@@ -317,16 +332,30 @@ func locationConfigForLua(l interface{}, a interface{}) string {
 		return "{}"
 	}
 
+	ignoredCIDRs, err := convertGoSliceIntoLuaTable(location.GlobalRateLimit.IgnoredCIDRs, false)
+	if err != nil {
+		klog.Errorf("failed to convert %v into Lua table: %q", location.GlobalRateLimit.IgnoredCIDRs, err)
+		ignoredCIDRs = "{}"
+	}
+
 	return fmt.Sprintf(`{
 		force_ssl_redirect = %t,
 		ssl_redirect = %t,
 		force_no_ssl_redirect = %t,
+		preserve_trailing_slash = %t,
 		use_port_in_redirects = %t,
+		global_throttle = { namespace = "%v", limit = %d, window_size = %d, key = %v, ignored_cidrs = %v },
 	}`,
 		location.Rewrite.ForceSSLRedirect,
 		location.Rewrite.SSLRedirect,
 		isLocationInLocationList(l, all.Cfg.NoTLSRedirectLocations),
+		location.Rewrite.PreserveTrailingSlash,
 		location.UsePortInRedirects,
+		location.GlobalRateLimit.Namespace,
+		location.GlobalRateLimit.Limit,
+		location.GlobalRateLimit.WindowSize,
+		parseComplexNginxVarIntoLuaTable(location.GlobalRateLimit.Key),
+		ignoredCIDRs,
 	)
 }
 
@@ -407,7 +436,7 @@ func buildLocation(input interface{}, enforceRegex bool) string {
 	}
 
 	if location.PathType != nil && *location.PathType == networkingv1beta1.PathTypeExact {
-		return fmt.Sprintf(`~ ^%s$`, path)
+		return fmt.Sprintf(`= %s`, path)
 	}
 
 	return path
@@ -427,7 +456,13 @@ func buildAuthLocation(input interface{}, globalExternalAuthURL string) string {
 	str := base64.URLEncoding.EncodeToString([]byte(location.Path))
 	// removes "=" after encoding
 	str = strings.Replace(str, "=", "", -1)
-	return fmt.Sprintf("/_external-auth-%v", str)
+
+	pathType := "default"
+	if location.PathType != nil {
+		pathType = fmt.Sprintf("%v", *location.PathType)
+	}
+
+	return fmt.Sprintf("/_external-auth-%v-%v", str, pathType)
 }
 
 // shouldApplyGlobalAuth returns true only in case when ExternalAuth.URL is not set and
@@ -802,6 +837,7 @@ func isValidByteSize(input interface{}, isOffset bool) bool {
 
 type ingressInformation struct {
 	Namespace   string
+	Path        string
 	Rule        string
 	Service     string
 	ServicePort string
@@ -841,7 +877,7 @@ func getIngressInformation(i, h, p interface{}) *ingressInformation {
 		return &ingressInformation{}
 	}
 
-	path, ok := p.(string)
+	ingressPath, ok := p.(string)
 	if !ok {
 		klog.Errorf("expected a 'string' type but %T was returned", p)
 		return &ingressInformation{}
@@ -855,6 +891,12 @@ func getIngressInformation(i, h, p interface{}) *ingressInformation {
 		Namespace:   ing.GetNamespace(),
 		Rule:        ing.GetName(),
 		Annotations: ing.Annotations,
+		Path:        ingressPath,
+	}
+
+	if ingressPath == "" {
+		ingressPath = "/"
+		info.Path = "/"
 	}
 
 	if ing.Spec.Backend != nil {
@@ -873,19 +915,31 @@ func getIngressInformation(i, h, p interface{}) *ingressInformation {
 			continue
 		}
 
-		if hostname != rule.Host {
+		host := "_"
+		if rule.Host != "" {
+			host = rule.Host
+		}
+
+		if hostname != host {
 			continue
 		}
 
 		for _, rPath := range rule.HTTP.Paths {
-			if path == rPath.Path {
-				info.Service = rPath.Backend.ServiceName
-				if rPath.Backend.ServicePort.String() != "0" {
-					info.ServicePort = rPath.Backend.ServicePort.String()
-				}
+			if ingressPath != rPath.Path {
+				continue
+			}
 
+			if info.Service != "" && rPath.Backend.ServiceName == "" {
+				// empty rule. Only contains a Path and PathType
 				return info
 			}
+
+			info.Service = rPath.Backend.ServiceName
+			if rPath.Backend.ServicePort.String() != "0" {
+				info.ServicePort = rPath.Backend.ServicePort.String()
+			}
+
+			return info
 		}
 	}
 
@@ -904,22 +958,25 @@ func buildForwardedFor(input interface{}) string {
 	return fmt.Sprintf("$http_%v", ffh)
 }
 
-func buildAuthSignURL(authSignURL string) string {
+func buildAuthSignURL(authSignURL, authRedirectParam string) string {
 	u, _ := url.Parse(authSignURL)
 	q := u.Query()
+	if authRedirectParam == "" {
+		authRedirectParam = defaultGlobalAuthRedirectParam
+	}
 	if len(q) == 0 {
-		return fmt.Sprintf("%v?rd=$pass_access_scheme://$http_host$escaped_request_uri", authSignURL)
+		return fmt.Sprintf("%v?%v=$pass_access_scheme://$http_host$escaped_request_uri", authSignURL, authRedirectParam)
 	}
 
-	if q.Get("rd") != "" {
+	if q.Get(authRedirectParam) != "" {
 		return authSignURL
 	}
 
-	return fmt.Sprintf("%v&rd=$pass_access_scheme://$http_host$escaped_request_uri", authSignURL)
+	return fmt.Sprintf("%v&%v=$pass_access_scheme://$http_host$escaped_request_uri", authSignURL, authRedirectParam)
 }
 
 func buildAuthSignURLLocation(location, authSignURL string) string {
-	hasher := sha1.New()
+	hasher := sha1.New() // #nosec
 	hasher.Write([]byte(location))
 	hasher.Write([]byte(authSignURL))
 	return "@" + hex.EncodeToString(hasher.Sum(nil))
@@ -934,7 +991,7 @@ func init() {
 func randomString() string {
 	b := make([]rune, 32)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[rand.Intn(len(letters))] // #nosec
 	}
 
 	return string(b)
@@ -963,7 +1020,7 @@ func buildOpentracing(c interface{}, s interface{}) string {
 		buf.WriteString("opentracing_load_tracer /usr/local/lib64/libdd_opentracing.so /etc/nginx/opentracing.json;")
 	} else if cfg.ZipkinCollectorHost != "" {
 		buf.WriteString("opentracing_load_tracer /usr/local/lib/libzipkin_opentracing_plugin.so /etc/nginx/opentracing.json;")
-	} else if cfg.JaegerCollectorHost != "" {
+	} else if cfg.JaegerCollectorHost != "" || cfg.JaegerEndpoint != "" {
 		buf.WriteString("opentracing_load_tracer /usr/local/lib/libjaegertracing_plugin.so /etc/nginx/opentracing.json;")
 	}
 
@@ -1471,4 +1528,52 @@ func buildServerName(hostname string) string {
 	parts := strings.Split(hostname, ".")
 
 	return `~^(?<subdomain>[\w-]+)\.` + strings.Join(parts, "\\.") + `$`
+}
+
+// parseComplexNGINXVar parses things like "$my${complex}ngx\$var" into
+// [["$var", "complex", "my", "ngx"]]. In other words, 2nd and 3rd elements
+// in the result are actual NGINX variable names, whereas first and 4th elements
+// are string literals.
+func parseComplexNginxVarIntoLuaTable(ngxVar string) string {
+	r := regexp.MustCompile(`(\\\$[0-9a-zA-Z_]+)|\$\{([0-9a-zA-Z_]+)\}|\$([0-9a-zA-Z_]+)|(\$|[^$\\]+)`)
+	matches := r.FindAllStringSubmatch(ngxVar, -1)
+	components := make([][]string, len(matches))
+	for i, match := range matches {
+		components[i] = match[1:]
+	}
+
+	luaTable, err := convertGoSliceIntoLuaTable(components, true)
+	if err != nil {
+		klog.Errorf("unexpected error: %v", err)
+		luaTable = "{}"
+	}
+	return luaTable
+}
+
+func convertGoSliceIntoLuaTable(goSliceInterface interface{}, emptyStringAsNil bool) (string, error) {
+	goSlice := reflect.ValueOf(goSliceInterface)
+	kind := goSlice.Kind()
+
+	switch kind {
+	case reflect.String:
+		if emptyStringAsNil && len(goSlice.Interface().(string)) == 0 {
+			return "nil", nil
+		}
+		return fmt.Sprintf(`"%v"`, goSlice.Interface()), nil
+	case reflect.Int, reflect.Bool:
+		return fmt.Sprintf(`%v`, goSlice.Interface()), nil
+	case reflect.Slice, reflect.Array:
+		luaTable := "{ "
+		for i := 0; i < goSlice.Len(); i++ {
+			luaEl, err := convertGoSliceIntoLuaTable(goSlice.Index(i).Interface(), emptyStringAsNil)
+			if err != nil {
+				return "", err
+			}
+			luaTable = luaTable + luaEl + ", "
+		}
+		luaTable += "}"
+		return luaTable, nil
+	default:
+		return "", fmt.Errorf("could not process type: %s", kind)
+	}
 }

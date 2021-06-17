@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestEqualConfiguration(t *testing.T) {
@@ -94,6 +95,24 @@ func TestL4ServiceElementsMatch(t *testing.T) {
 				{Port: 80, Endpoints: []Endpoint{{Address: "1.1.1.2"}, {Address: "1.1.1.1"}}}},
 			true,
 		},
+		{
+			[]L4Service{
+				{Port: 80, Backend: L4Backend{Name: "test", Namespace: "default", Protocol: "TCP", ProxyProtocol: ProxyProtocol{Decode: false, Encode: false}}},
+			},
+			[]L4Service{
+				{Port: 80, Backend: L4Backend{Name: "test", Namespace: "default", Protocol: "TCP", ProxyProtocol: ProxyProtocol{Decode: false, Encode: false}}},
+			},
+			true,
+		},
+		{
+			[]L4Service{
+				{Port: 80, Backend: L4Backend{Name: "test", Namespace: "default", Protocol: "TCP", ProxyProtocol: ProxyProtocol{Decode: false, Encode: false}}},
+			},
+			[]L4Service{
+				{Port: 80, Backend: L4Backend{Name: "test", Namespace: "default", Protocol: "TCP", ProxyProtocol: ProxyProtocol{Decode: false, Encode: true}}},
+			},
+			false,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -121,6 +140,156 @@ func TestIntElementsMatch(t *testing.T) {
 		result := compareInts(testCase.listA, testCase.listB)
 		if result != testCase.expected {
 			t.Errorf("expected %v but returned %v (%v - %v)", testCase.expected, result, testCase.listA, testCase.listB)
+		}
+	}
+}
+
+func TestSSLCertMatch(t *testing.T) {
+	now := time.Now()
+	cert := &SSLCert{
+		UID:        "1",
+		Name:       "nameA",
+		Namespace:  "namespaceA",
+		CASHA:      "CASHA_A",
+		CN:         []string{"CommonNameA"},
+		CRLSHA:     "CRLSHA_A",
+		PemSHA:     "PemSHA_A",
+		PemCertKey: "PemKeyA",
+		ExpireTime: now,
+	}
+
+	testCases := []struct {
+		sslCertA *SSLCert
+		sslCertB *SSLCert
+		expected bool
+	}{
+		{cert, cert, true},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now,
+			},
+			true,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_New",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now,
+			},
+			false,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_NEW",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now,
+			},
+			false,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_New",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now,
+			},
+			false,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameNew"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now,
+			},
+			false,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now.Add(time.Minute),
+			},
+			false,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "1",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyNew",
+				ExpireTime: now,
+			},
+			false,
+		},
+		{
+			cert,
+			&SSLCert{
+				UID:        "2",
+				Name:       "nameA",
+				Namespace:  "namespaceA",
+				CASHA:      "CASHA_A",
+				CN:         []string{"CommonNameA"},
+				CRLSHA:     "CRLSHA_A",
+				PemSHA:     "PemSHA_A",
+				PemCertKey: "PemKeyA",
+				ExpireTime: now,
+			},
+			false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		result := testCase.sslCertA.Equal(testCase.sslCertB)
+		if result != testCase.expected {
+			t.Errorf("expected %v but returned %v (%v - %v)", testCase.expected, result, testCase.sslCertA, testCase.sslCertB)
 		}
 	}
 }

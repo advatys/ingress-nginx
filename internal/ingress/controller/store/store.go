@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 
 	"k8s.io/ingress-nginx/internal/file"
 	"k8s.io/ingress-nginx/internal/ingress"
@@ -327,7 +328,7 @@ func New(
 			return
 		}
 
-		if isCatchAllIngress(ing.Spec) && disableCatchAll {
+		if hasCatchAllIngressRule(ing.Spec) && disableCatchAll {
 			klog.InfoS("Ignoring delete for catch-all because of --disable-catch-all", "ingress", klog.KObj(ing))
 			return
 		}
@@ -347,14 +348,16 @@ func New(
 		AddFunc: func(obj interface{}) {
 			ing, _ := toIngress(obj)
 			if !class.IsValid(ing) {
-				a, _ := parser.GetStringAnnotation(class.IngressKey, ing)
-				klog.InfoS("Ignoring add for ingress based on annotation", "ingress", klog.KObj(ing), "annotation", a)
+				ingressClass, _ := parser.GetStringAnnotation(class.IngressKey, ing)
+				klog.InfoS("Ignoring ingress", "ingress", klog.KObj(ing), "kubernetes.io/ingress.class", ingressClass, "ingressClassName", pointer.StringPtrDerefOr(ing.Spec.IngressClassName, ""))
 				return
 			}
-			if isCatchAllIngress(ing.Spec) && disableCatchAll {
+
+			if hasCatchAllIngressRule(ing.Spec) && disableCatchAll {
 				klog.InfoS("Ignoring add for catch-all ingress because of --disable-catch-all", "ingress", klog.KObj(ing))
 				return
 			}
+
 			recorder.Eventf(ing, corev1.EventTypeNormal, "Sync", "Scheduled for sync")
 
 			store.syncIngress(ing)
@@ -374,7 +377,7 @@ func New(
 			validOld := class.IsValid(oldIng)
 			validCur := class.IsValid(curIng)
 			if !validOld && validCur {
-				if isCatchAllIngress(curIng.Spec) && disableCatchAll {
+				if hasCatchAllIngressRule(curIng.Spec) && disableCatchAll {
 					klog.InfoS("ignoring update for catch-all ingress because of --disable-catch-all", "ingress", klog.KObj(curIng))
 					return
 				}
@@ -386,7 +389,7 @@ func New(
 				ingDeleteHandler(old)
 				return
 			} else if validCur && !reflect.DeepEqual(old, cur) {
-				if isCatchAllIngress(curIng.Spec) && disableCatchAll {
+				if hasCatchAllIngressRule(curIng.Spec) && disableCatchAll {
 					klog.InfoS("ignoring update for catch-all ingress and delete old one because of --disable-catch-all", "ingress", klog.KObj(curIng))
 					ingDeleteHandler(old)
 					return
@@ -454,8 +457,8 @@ func New(
 							klog.ErrorS(err, "could not find Ingress in local store", "ingress", ingKey)
 							continue
 						}
-						store.syncIngress(ing)
 						store.syncSecrets(ing)
+						store.syncIngress(ing)
 					}
 					updateCh.In() <- Event{
 						Type: UpdateEvent,
@@ -621,14 +624,11 @@ func New(
 	return store
 }
 
-// isCatchAllIngress returns whether or not an ingress produces a
+// hasCatchAllIngressRule returns whether or not an ingress produces a
 // catch-all server, and so should be ignored when --disable-catch-all is set
-func isCatchAllIngress(spec networkingv1beta1.IngressSpec) bool {
-	return spec.Backend != nil && len(spec.Rules) == 0
+func hasCatchAllIngressRule(spec networkingv1beta1.IngressSpec) bool {
+	return spec.Backend != nil
 }
-
-// Default path type is Prefix to not break existing definitions
-var defaultPathType = networkingv1beta1.PathTypePrefix
 
 // syncIngress parses ingress annotations converting the value of the
 // annotation to a go struct

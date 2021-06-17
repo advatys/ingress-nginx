@@ -24,7 +24,6 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testclient "k8s.io/client-go/kubernetes/fake"
@@ -64,7 +63,7 @@ func buildSimpleClientSet() *testclient.Clientset {
 					Name:      "foo1",
 					Namespace: apiv1.NamespaceDefault,
 					Labels: map[string]string{
-						"lable_sig": "foo_pod",
+						"label_sig": "foo_pod",
 					},
 				},
 				Spec: apiv1.PodSpec{
@@ -97,7 +96,7 @@ func buildSimpleClientSet() *testclient.Clientset {
 					Name:      "foo2",
 					Namespace: apiv1.NamespaceDefault,
 					Labels: map[string]string{
-						"lable_sig": "foo_no",
+						"label_sig": "foo_no",
 					},
 				},
 			},
@@ -106,7 +105,7 @@ func buildSimpleClientSet() *testclient.Clientset {
 					Name:      "foo3",
 					Namespace: metav1.NamespaceSystem,
 					Labels: map[string]string{
-						"lable_sig": "foo_pod",
+						"label_sig": "foo_pod",
 					},
 				},
 				Spec: apiv1.PodSpec{
@@ -297,12 +296,12 @@ func TestStatusActions(t *testing.T) {
 		UpdateStatusOnShutdown: true,
 	}
 
-	k8s.IngressNGINXPod = &v1.Pod{
+	k8s.IngressPodDetails = &k8s.PodInfo{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo_base_pod",
 			Namespace: apiv1.NamespaceDefault,
 			Labels: map[string]string{
-				"lable_sig": "foo_pod",
+				"label_sig": "foo_pod",
 			},
 		},
 	}
@@ -380,7 +379,7 @@ func TestKeyfunc(t *testing.T) {
 	}
 }
 
-func TestRunningAddresessWithPublishService(t *testing.T) {
+func TestRunningAddressesWithPublishService(t *testing.T) {
 	testCases := map[string]struct {
 		fakeClient  *testclient.Clientset
 		expected    []string
@@ -560,7 +559,7 @@ func TestRunningAddresessWithPublishService(t *testing.T) {
 	}
 }
 
-func TestRunningAddresessWithPods(t *testing.T) {
+func TestRunningAddressesWithPods(t *testing.T) {
 	fk := buildStatusSync()
 	fk.PublishService = ""
 
@@ -578,7 +577,7 @@ func TestRunningAddresessWithPods(t *testing.T) {
 	}
 }
 
-func TestRunningAddresessWithPublishStatusAddress(t *testing.T) {
+func TestRunningAddressesWithPublishStatusAddress(t *testing.T) {
 	fk := buildStatusSync()
 	fk.PublishStatusAddress = "127.0.0.1"
 
@@ -595,6 +594,51 @@ func TestRunningAddresessWithPublishStatusAddress(t *testing.T) {
 		t.Errorf("returned %v but expected %v", rv, "127.0.0.1")
 	}
 }
+
+func TestRunningAddressesWithPublishStatusAddresses(t *testing.T) {
+	fk := buildStatusSync()
+	fk.PublishStatusAddress = "127.0.0.1,1.1.1.1"
+
+	ra, _ := fk.runningAddresses()
+	if ra == nil {
+		t.Fatalf("returned nil but expected valid []string")
+	}
+	rl := len(ra)
+	if len(ra) != 2 {
+		t.Errorf("returned %v but expected %v", rl, 2)
+	}
+	rv := ra[0]
+	rv2 := ra[1]
+	if rv != "127.0.0.1" {
+		t.Errorf("returned %v but expected %v", rv, "127.0.0.1")
+	}
+	if rv2 != "1.1.1.1" {
+		t.Errorf("returned %v but expected %v", rv2, "1.1.1.1")
+	}
+}
+
+func TestRunningAddressesWithPublishStatusAddressesAndSpaces(t *testing.T) {
+	fk := buildStatusSync()
+	fk.PublishStatusAddress = "127.0.0.1,  1.1.1.1"
+
+	ra, _ := fk.runningAddresses()
+	if ra == nil {
+		t.Fatalf("returned nil but expected valid []string")
+	}
+	rl := len(ra)
+	if len(ra) != 2 {
+		t.Errorf("returned %v but expected %v", rl, 2)
+	}
+	rv := ra[0]
+	rv2 := ra[1]
+	if rv != "127.0.0.1" {
+		t.Errorf("returned %v but expected %v", rv, "127.0.0.1")
+	}
+	if rv2 != "1.1.1.1" {
+		t.Errorf("returned %v but expected %v", rv2, "1.1.1.1")
+	}
+}
+
 func TestSliceToStatus(t *testing.T) {
 	fkEndpoints := []string{
 		"10.0.0.1",

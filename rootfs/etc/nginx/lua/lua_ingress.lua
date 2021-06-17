@@ -2,6 +2,7 @@ local ngx_re_split = require("ngx.re").split
 
 local certificate_configured_for_current_request =
   require("certificate").configured_for_current_request
+local global_throttle = require("global_throttle")
 
 local ngx = ngx
 local io = io
@@ -146,9 +147,11 @@ function _M.rewrite(location_config)
 
   if redirect_to_https(location_config) then
     local request_uri = ngx.var.request_uri
-    -- do not append a trailing slash on redirects
-    if string.sub(request_uri, -1) == "/" then
-      request_uri = string.sub(request_uri, 1, -2)
+    -- do not append a trailing slash on redirects unless enabled by annotations
+    if location_config.preserve_trailing_slash == false then
+      if string.byte(request_uri, -1, -1) == string.byte('/') then
+        request_uri = string.sub(request_uri, 1, -2)
+      end
     end
 
     local uri = string_format("https://%s%s", redirect_host(), request_uri)
@@ -158,8 +161,10 @@ function _M.rewrite(location_config)
         config.listen_ports.https, request_uri)
     end
 
-    ngx_redirect(uri, config.http_redirect_code)
+    return ngx_redirect(uri, config.http_redirect_code)
   end
+
+  global_throttle.throttle(config.global_throttle, location_config.global_throttle)
 end
 
 function _M.header()

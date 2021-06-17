@@ -3,24 +3,52 @@ repo_name: "kubernetes/ingress-nginx"
 repo_url: https://github.com/kubernetes/ingress-nginx
 site_url: https://kubernetes.github.io/ingress-nginx
 
+# Extensions
 markdown_extensions:
-  - attr_list
-  - pymdownx.emoji
   - admonition
-  - codehilite
-  - pymdownx.inlinehilite
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - pymdownx.superfences
+  - abbr
+  - attr_list
+  - def_list
+  - footnotes
   - meta
+  - md_in_html
   - toc:
       # insert a blank space before the character
       permalink: " ¶"
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
 theme:
   name: material
   features:
-    - tabs
-    - instant
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.instant
+    - navigation.sections
 
   palette:
     primary: "teal"
@@ -31,6 +59,8 @@ theme:
 plugins:
   - search
   - awesome-pages
+  - minify:
+      minify_html: true
 
 extra_css: [extra.css]
 
@@ -42,7 +72,6 @@ nav:
       - How it works: "how-it-works.md"
       - Troubleshooting: "troubleshooting.md"
       - kubectl plugin: "kubectl-plugin.md"
-      - Development: "development.md"
   - Deployment:
       - Installation Guide: "deploy/index.md"
       - Bare-metal considerations: "deploy/baremetal.md"
@@ -95,3 +124,6 @@ nav:
       - Static IPs: "examples/static-ip/README.md"
       - TLS termination: "examples/tls-termination/README.md"
       - Pod Security Policy (PSP): "examples/psp/README.md"
+  - Developer Guide:
+      - Getting Started: "developer-guide/getting-started.md"
+      - Code Overview: "developer-guide/code-overview.md"

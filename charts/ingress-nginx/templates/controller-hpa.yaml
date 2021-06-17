@@ -1,7 +1,13 @@
 {{- if and .Values.controller.autoscaling.enabled (or (eq .Values.controller.kind "Deployment") (eq .Values.controller.kind "Both")) -}}
+{{- if not .Values.controller.keda.enabled }}
+
 apiVersion: autoscaling/v2beta2
 kind: HorizontalPodAutoscaler
 metadata:
+  annotations:
+  {{- with .Values.controller.autoscaling.annotations }}
+  {{- toYaml . | trimSuffix "\n" | nindent 4 }}
+  {{- end }}
   labels:
     {{- include "ingress-nginx.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
@@ -14,14 +20,6 @@ spec:
   minReplicas: {{ .Values.controller.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.controller.autoscaling.maxReplicas }}
   metrics:
-  {{- with .Values.controller.autoscaling.targetCPUUtilizationPercentage }}
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: {{ . }}
-  {{- end }}
   {{- with .Values.controller.autoscaling.targetMemoryUtilizationPercentage }}
   - type: Resource 
     resource: 
@@ -30,7 +28,17 @@ spec:
         type: Utilization
         averageUtilization: {{ . }}
   {{- end }}
+  {{- with .Values.controller.autoscaling.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ . }}
+  {{- end }}
   {{- with .Values.controller.autoscalingTemplate }}
 {{- toYaml . | nindent 2 }}
   {{- end }}
 {{- end }}
+{{- end }}
+

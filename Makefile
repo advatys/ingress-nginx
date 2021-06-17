@@ -51,7 +51,7 @@ endif
 
 REGISTRY ?= gcr.io/k8s-staging-ingress-nginx
 
-BASE_IMAGE ?= k8s.gcr.io/ingress-nginx/nginx:v20201028-g2c1279cd8@sha256:bd22e4f9bbf88aee527a86692be4442d03fa1ef2df94356312c9db8bec1f7ea3
+BASE_IMAGE ?= k8s.gcr.io/ingress-nginx/nginx:v20210530-g6aab4c291@sha256:a7356029dd0c26cc3466bf7a27daec0f4df73aa14ca6c8b871a767022a812c0b
 
 GOARCH=$(ARCH)
 
@@ -137,12 +137,6 @@ print-e2e-suite: e2e-test-binary ## Prints information about the suite of e2e te
 	@build/run-in-docker.sh \
 		hack/print-e2e-suite.sh
 
-.PHONY: cover
-cover:  ## Run go coverage unit tests.
-	@build/cover.sh
-	echo "Uploading coverage results..."
-	@curl -s https://codecov.io/bash | bash
-
 .PHONY: vet
 vet:
 	@go vet $(shell go list ${PKG}/internal/... | grep -v vendor)
@@ -164,10 +158,12 @@ dev-env-stop: ## Deletes local Kubernetes cluster created by kind.
 
 .PHONY: live-docs
 live-docs: ## Build and launch a local copy of the documentation website in http://localhost:8000
+	@docker build -t ingress-nginx-docs .github/actions/mkdocs
 	@docker run --rm -it \
 		-p 8000:8000 \
 		-v ${PWD}:/docs \
-		squidfunk/mkdocs-material:5.5.12
+		--entrypoint mkdocs \
+		ingress-nginx-docs serve --dev-addr=0.0.0.0:8000
 
 .PHONY: misspell
 misspell:  ## Check for spelling errors.

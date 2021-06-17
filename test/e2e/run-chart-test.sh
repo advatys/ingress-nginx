@@ -47,16 +47,10 @@ export KIND_CLUSTER_NAME=${KIND_CLUSTER_NAME:-ingress-nginx-dev}
 
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kind-config-$KIND_CLUSTER_NAME}"
 
-# Disable execution if running as a Prow job
-if [[ ! -z ${PROW_JOB_ID:-} ]]; then
-  echo "skipping execution..."
-  exit 0
-fi
-
 if [ "${SKIP_CLUSTER_CREATION:-false}" = "false" ]; then
   echo "[dev-env] creating Kubernetes cluster with kind"
 
-  export K8S_VERSION=${K8S_VERSION:-v1.19.1@sha256:98cf5288864662e37115e362b23e4369c8c4a408f99cbc06e58ac30ddc721600}
+  export K8S_VERSION=${K8S_VERSION:-v1.20.2@sha256:8f7ea6e7642c0da54f04a7ee10431549c0257315b3a634f6ef2fecaaedb19bab}
 
   kind create cluster \
     --verbosity=${KIND_LOG_LEVEL} \
@@ -70,11 +64,13 @@ if [ "${SKIP_CLUSTER_CREATION:-false}" = "false" ]; then
 fi
 
 echo "[dev-env] running helm chart e2e tests..."
+# Uses a custom chart-testing image to avoid timeouts waiting for namespace deletion.
+# The changes can be found here: https://github.com/aledbf/chart-testing/commit/41fe0ae0733d0c9a538099fb3cec522e888e3d82
 docker run --rm --interactive --network host \
     --name ct \
     --volume $KUBECONFIG:/root/.kube/config \
     --volume "${DIR}/../../":/workdir \
     --workdir /workdir \
-    aledbf/chart-testing:v3.0.0-rc.4 ct install \
+    aledbf/chart-testing:v3.3.1-next ct install \
         --charts charts/ingress-nginx \
         --helm-extra-args "--timeout 60s"
