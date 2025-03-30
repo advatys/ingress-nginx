@@ -26,14 +26,11 @@ set -o nounset
 set -o pipefail
 
 # temporal directory for the /etc/ingress-controller directory
-if [[ "$OSTYPE" == darwin* ]] && [[ "$RUNTIME" == podman ]]; then
+if [[ "$OSTYPE" == darwin* ]]; then
   mkdir -p "tmp"
   INGRESS_VOLUME=$(pwd)/$(mktemp -d tmp/XXXXXX)
 else
   INGRESS_VOLUME=$(mktemp -d)
-  if [[ "$OSTYPE" == darwin* ]]; then
-    INGRESS_VOLUME=/private$INGRESS_VOLUME
-  fi
 fi
 
 # make sure directory for SSL cert storage exists under ingress volume
@@ -44,7 +41,7 @@ function cleanup {
 }
 trap cleanup EXIT
 
-E2E_IMAGE=${E2E_IMAGE:-registry.k8s.io/ingress-nginx/e2e-test-runner:v20240404-436df3e4@sha256:6bcba53b14d396177414e01f20e9111f1c009ac3b476a9b7668bb98d12bd5e85}
+E2E_IMAGE=${E2E_IMAGE:-registry.k8s.io/ingress-nginx/e2e-test-runner:v2.0.1@sha256:78c1e675520ae9345789fdaf684ccb335a94938390dc6f9f651dd93164f3a888}
 
 if [[ "$RUNTIME" == podman ]]; then
   # Podman does not support both tag and digest
@@ -82,7 +79,7 @@ if [[ "$DOCKER_IN_DOCKER_ENABLED" == "true" ]]; then
   echo "..reached DIND check TRUE block, inside run-in-docker.sh"
   echo "FLAGS=$FLAGS"
   #go env
-  go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@v2.19.0
+  go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo@v2.23.3
   find / -type f -name ginkgo 2>/dev/null
   which ginkgo
   /bin/bash -c "${FLAGS}"

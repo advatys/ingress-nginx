@@ -105,6 +105,4 @@ rules:
     resources: ['securitycontextconstraints']
     verbs:          ['use']
     resourceNames:  [{{ include "ingress-nginx.fullname" . }}]
-
-
 {{- end }}
