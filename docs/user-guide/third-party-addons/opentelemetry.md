@@ -42,7 +42,7 @@ otlp-collector-host: "otel-coll-collector.otel.svc"
 NOTE: While the option is called `otlp-collector-host`, you will need to point this to any backend that receives otlp-grpc.
 
 Next you will need to deploy a distributed telemetry system which uses OpenTelemetry.
-[opentelemetry-collector](https://github.com/open-telemetry/opentelemetry-collector), [Jaeger](https://www.jaegertracing.io/)
+[opentelemetry-collector](https://github.com/open-telemetry/opentelemetry-collector), [Jaeger](https://www.jaegertracing.io/),
 [Tempo](https://github.com/grafana/tempo), and [zipkin](https://zipkin.io/)
 have been tested.
 
@@ -65,7 +65,7 @@ otel-max-queuesize
 
 # The delay interval in milliseconds between two consecutive exports.
 otel-schedule-delay-millis
-        
+
 # How long the export can run before it is cancelled.
 otel-schedule-delay-millis
 
@@ -112,7 +112,7 @@ graph TB
     end
 
     subgraph otel
-        otc["Otel Collector"] 
+        otc["Otel Collector"]
     end
 
     subgraph observability
@@ -152,7 +152,7 @@ To install the example and collectors run:
     ```yaml
       opentelemetry:
         enabled: true
-        image: registry.k8s.io/ingress-nginx/opentelemetry:v20230527@sha256:fd7ec835f31b7b37187238eb4fdad4438806e69f413a203796263131f4f02ed0
+        image: registry.k8s.io/ingress-nginx/opentelemetry-1.25.3:v20240813-b933310d@sha256:f7604ac0547ed64d79b98d92133234e66c2c8aade3c1f4809fed5eec1fb7f922
         containerSecurityContext:
         allowPrivilegeEscalation: false
     ```
@@ -190,8 +190,8 @@ To install the example and collectors run:
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo add grafana https://grafana.github.io/helm-charts
     helm repo update
-    # deply cert-manager needed for OpenTelemetry collector operator
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.9.1/cert-manager.yaml
+    # deploy cert-manager needed for OpenTelemetry collector operator
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml
     # create observability namespace
     kubectl apply -f https://raw.githubusercontent.com/esigo/nginx-example/main/observability/namespace.yaml
     # install OpenTelemetry collector operator
